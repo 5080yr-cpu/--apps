@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>せどり粗利計算</title>
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1419;
+    --surface: #1a2028;
+    --surface-2: #232b35;
+    --border: #2d3742;
+    --text: #e8eef5;
+    --muted: #7a8a9a;
+    --accent: #00d9a3;
+    --accent-dim: #00d9a322;
+    --red: #ff5a6e;
+    --red-dim: #ff5a6e22;
+    --amber: #ffc83d;
+    --blue: #4fc3ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  body { padding: 16px 14px 100px; max-width: 480px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 6px 4px 18px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
+  }
+  h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .ver { font-size: 11px; color: var(--muted); font-weight: 600; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .card-title {
+    font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.12em;
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+
+  .scan-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .scan-btn {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    padding: 14px 8px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    cursor: pointer; transition: 0.15s;
+  }
+  .scan-btn:active { background: var(--accent-dim); border-color: var(--accent); }
+  .scan-btn svg { width: 18px; height: 18px; }
+
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  label {
+    display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600;
+  }
+  input[type="text"], input[type="number"], select {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); padding: 12px 14px; font-size: 17px; border-radius: 10px;
+    font-family: inherit; font-weight: 600;
+    -webkit-appearance: none; appearance: none;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  select {
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%237a8a9a' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+  /* セグメント */
+  .seg { display: grid; gap: 4px; background: var(--surface-2); padding: 4px;
+    border-radius: 10px; border: 1px solid var(--border); }
+  .seg.cols-2 { grid-template-columns: 1fr 1fr; }
+  .seg.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .seg button {
+    background: transparent; color: var(--muted); border: none; padding: 9px 4px;
+    font-size: 13px; font-weight: 600; border-radius: 7px; cursor: pointer;
+    font-family: inherit; transition: 0.15s;
+  }
+  .seg button.active { background: var(--accent); color: #002419; }
+
+  /* 結果カード */
+  .results { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .result {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 10px; position: relative; overflow: hidden;
+  }
+  .result.winner { border-color: var(--accent); background: var(--accent-dim); }
+  .result.winner::before {
+    content: "BEST"; position: absolute; top: 7px; right: 8px;
+    background: var(--accent); color: #002419; font-size: 9px; font-weight: 800;
+    padding: 2px 6px; border-radius: 4px; letter-spacing: 0.08em;
+  }
+  .result-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: 0.08em; }
+  .result-value {
+    font-size: 26px; font-weight: 800; margin: 4px 0 2px;
+    font-feature-settings: "tnum"; letter-spacing: -0.02em;
+  }
+  .result-value.pos { color: var(--accent); }
+  .result-value.neg { color: var(--red); }
+  .result-rate { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .breakdown {
+    font-size: 11px; color: var(--muted); margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid var(--border); line-height: 1.7;
+  }
+  .breakdown .row { display: flex; justify-content: space-between; }
+  .breakdown .row span:last-child { color: var(--text); font-weight: 600; }
+
+  .scanner-modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100;
+    display: none; flex-direction: column; padding: 20px;
+  }
+  .scanner-modal.active { display: flex; }
+  .scanner-modal h2 { font-size: 16px; margin-bottom: 14px; color: white; }
+  #qr-reader { width: 100%; max-width: 400px; margin: 0 auto; }
+  #qr-reader video { border-radius: 12px; }
+  .close-btn {
+    background: var(--red); color: white; border: none; padding: 14px;
+    border-radius: 10px; font-size: 16px; font-weight: 700; margin-top: 14px;
+    cursor: pointer; font-family: inherit;
+  }
+  .status {
+    text-align: center; padding: 14px; color: var(--amber);
+    font-size: 13px; font-weight: 600;
+  }
+
+  .reset-btn {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    padding: 12px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    width: 100%; cursor: pointer; font-family: inherit; margin-top: 6px;
+  }
+  .reset-btn:active { color: var(--red); border-color: var(--red); }
+
+  .hint {
+    font-size: 11px; color: var(--muted); padding: 8px 10px; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>せどり粗利計算</h1>
+  <span class="ver">v2.0</span>
+</header>
+
+<!-- スキャンボタン -->
+<div class="card">
+  <div class="card-title">📷 スキャン</div>
+  <div class="scan-row">
+    <button class="scan-btn" onclick="startBarcodeScan()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10M7 7v10M11 7v6M11 17h4M15 7v10M19 7v10"/></svg>
+      バーコード
+    </button>
+    <button class="scan-btn" onclick="startOcrScan()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>
+      値札OCR
+    </button>
+  </div>
+  <input type="file" id="ocrFile" accept="image/*" capture="environment" style="display:none" onchange="handleOcrFile(event)">
+  <div id="status" class="status" style="display:none"></div>
+</div>
+
+<!-- 商品情報 -->
+<div class="card">
+  <div class="card-title">商品</div>
+  <div class="field">
+    <label>商品名（任意）</label>
+    <input type="text" id="productName" placeholder="例：Anker PowerCore 10000">
+  </div>
+  <div class="field">
+    <label>JANコード（任意）</label>
+    <input type="text" id="janCode" placeholder="4549995123456" inputmode="numeric">
+  </div>
+</div>
+
+<!-- 金額入力 -->
+<div class="card">
+  <div class="card-title">💰 金額</div>
+  <div class="two-col">
+    <div class="field">
+      <label>仕入価格 ¥（税込）</label>
+      <input type="number" id="costPrice" placeholder="0" inputmode="numeric" oninput="calculate()">
+    </div>
+    <div class="field">
+      <label>販売価格 ¥</label>
+      <input type="number" id="sellPrice" placeholder="0" inputmode="numeric" oninput="calculate()">
+    </div>
+  </div>
+  <div class="field">
+    <label>配送料 ¥（自己発送時のみ）</label>
+    <input type="number" id="shipCost" placeholder="0" value="0" inputmode="numeric" oninput="calculate()">
+  </div>
+</div>
+
+<!-- カテゴリ・FBA -->
+<div class="card">
+  <div class="card-title">⚙️ 設定</div>
+  <div class="field">
+    <label>Amazonカテゴリ（販売手数料）</label>
+    <select id="category" onchange="calculate()">
+      <option value="15">本・DVD・CD・ホビー・服など (15%)</option>
+      <option value="10">食品・ヘルス・ビューティー・スポーツ (10%)</option>
+      <option value="8">家電・カメラ・PC (8%)</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>発送方法</label>
+    <div class="seg cols-2">
+      <button class="active" id="fba-self" onclick="setFba(false)">自己発送</button>
+      <button id="fba-amazon" onclick="setFba(true)">FBA</button>
+    </div>
+  </div>
+  <div class="field" id="fbaSizeField" style="display:none">
+    <label>FBAサイズ（手数料）</label>
+    <select id="fbaSize" onchange="calculate()">
+      <option value="318">小型(〜25×18×2cm) ¥318</option>
+      <option value="434">標準1(〜35×30×3.3cm) ¥434</option>
+      <option value="514">標準2(〜60×45×15cm 9kg) ¥514</option>
+      <option value="603">大型1(〜80cm 2kg) ¥603</option>
+      <option value="867">大型2(〜100cm 5kg) ¥867</option>
+    </select>
+  </div>
+</div>
+
+<!-- 計算結果 -->
+<div class="results">
+  <div class="result" id="amazonCard">
+    <div class="result-label">AMAZON</div>
+    <div class="result-value" id="amazonProfit">¥0</div>
+    <div class="result-rate" id="amazonRate">利益率 0%</div>
+    <div class="breakdown" id="amazonBreakdown" style="display:none">
+      <div class="row"><span>販売手数料</span><span id="amzFee">¥0</span></div>
+      <div class="row"><span>FBA / 送料</span><span id="amzShip">¥0</span></div>
+    </div>
+  </div>
+  <div class="result" id="mercariCard">
+    <div class="result-label">メルカリ</div>
+    <div class="result-value" id="mercariProfit">¥0</div>
+    <div class="result-rate" id="mercariRate">利益率 0%</div>
+    <div class="breakdown" id="mercariBreakdown" style="display:none">
+      <div class="row"><span>販売手数料 10%</span><span id="merFee">¥0</span></div>
+      <div class="row"><span>送料</span><span id="merShip">¥0</span></div>
+    </div>
+  </div>
+</div>
+
+<button class="reset-btn" onclick="resetAll()">↻ クリア</button>
+
+<div class="hint">
+  ※ FBA手数料は標準サイズの簡易表示。実際の手数料は商品の重量・カテゴリで変動します。Amazon・メルカリの最新手数料表で必ず確認してください。
+</div>
+
+<!-- バーコードスキャナーモーダル -->
+<div class="scanner-modal" id="scannerModal">
+  <h2>バーコードをかざしてください</h2>
+  <div id="qr-reader"></div>
+  <button class="close-btn" onclick="stopBarcodeScan()">閉じる</button>
+</div>
+
+<script>
+let html5QrCode = null;
+let isFba = false;
+
+function setFba(v) {
+  isFba = v;
+  document.getElementById('fba-self').classList.toggle('active', !v);
+  document.getElementById('fba-amazon').classList.toggle('active', v);
+  document.getElementById('fbaSizeField').style.display = v ? 'block' : 'none';
+  calculate();
+}
+
+function calculate() {
+  const cost = parseFloat(document.getElementById('costPrice').value) || 0;
+  const sell = parseFloat(document.getElementById('sellPrice').value) || 0;
+  const shipCost = parseFloat(document.getElementById('shipCost').value) || 0;
+  const feeRate = parseFloat(document.getElementById('category').value) / 100;
+  const fbaSize = parseFloat(document.getElementById('fbaSize').value) || 0;
+
+  if (sell === 0 && cost === 0) {
+    document.getElementById('amazonProfit').textContent = '¥0';
+    document.getElementById('mercariProfit').textContent = '¥0';
+    document.getElementById('amazonRate').textContent = '利益率 0%';
+    document.getElementById('mercariRate').textContent = '利益率 0%';
+    document.getElementById('amazonBreakdown').style.display = 'none';
+    document.getElementById('mercariBreakdown').style.display = 'none';
+    document.getElementById('amazonCard').classList.remove('winner');
+    document.getElementById('mercariCard').classList.remove('winner');
+    return;
+  }
+
+  // Amazon 計算
+  const amzCommission = Math.round(sell * feeRate);
+  const amzShipFee = isFba ? fbaSize : shipCost;
+  const amzProfit = sell - cost - amzCommission - amzShipFee;
+  const amzRate = sell > 0 ? (amzProfit / sell * 100) : 0;
+
+  // メルカリ 計算（送料は仕入れた人持ち＝出品者負担として shipCost を使用）
+  const merCommission = Math.round(sell * 0.10);
+  const merShipFee = shipCost;
+  const merProfit = sell - cost - merCommission - merShipFee;
+  const merRate = sell > 0 ? (merProfit / sell * 100) : 0;
+
+  // 表示
+  const amzEl = document.getElementById('amazonProfit');
+  const merEl = document.getElementById('mercariProfit');
+  amzEl.textContent = '¥' + amzProfit.toLocaleString();
+  merEl.textContent = '¥' + merProfit.toLocaleString();
+  amzEl.className = 'result-value ' + (amzProfit >= 0 ? 'pos' : 'neg');
+  merEl.className = 'result-value ' + (merProfit >= 0 ? 'pos' : 'neg');
+
+  document.getElementById('amazonRate').textContent = '利益率 ' + amzRate.toFixed(1) + '%';
+  document.getElementById('mercariRate').textContent = '利益率 ' + merRate.toFixed(1) + '%';
+
+  // 内訳
+  document.getElementById('amzFee').textContent = '¥' + amzCommission.toLocaleString();
+  document.getElementById('amzShip').textContent = '¥' + amzShipFee.toLocaleString();
+  document.getElementById('merFee').textContent = '¥' + merCommission.toLocaleString();
+  document.getElementById('merShip').textContent = '¥' + merShipFee.toLocaleString();
+  document.getElementById('amazonBreakdown').style.display = 'block';
+  document.getElementById('mercariBreakdown').style.display = 'block';
+
+  // 勝者表示
+  document.getElementById('amazonCard').classList.toggle('winner', amzProfit > merProfit && amzProfit > 0);
+  document.getElementById('mercariCard').classList.toggle('winner', merProfit > amzProfit && merProfit > 0);
+}
+
+// バーコードスキャン
+function startBarcodeScan() {
+  document.getElementById('scannerModal').classList.add('active');
+  html5QrCode = new Html5Qrcode("qr-reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 280, height: 120 } },
+    (decoded) => {
+      document.getElementById('janCode').value = decoded;
+      stopBarcodeScan();
+      showStatus('✓ バーコード読取完了：' + decoded, 3000);
+    },
+    () => {}
+  ).catch(err => {
+    showStatus('カメラ起動失敗: ' + err, 4000);
+    stopBarcodeScan();
+  });
+}
+
+function stopBarcodeScan() {
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => {
+      html5QrCode.clear();
+      html5QrCode = null;
+    }).catch(() => {
+      html5QrCode = null;
+    });
+  }
+  document.getElementById('scannerModal').classList.remove('active');
+}
+
+// OCR
+function startOcrScan() {
+  document.getElementById('ocrFile').click();
+}
+
+async function handleOcrFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  showStatus('🔍 値札を読み取り中...', 0);
+  try {
+    const result = await Tesseract.recognize(file, 'jpn+eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          showStatus('🔍 解析中 ' + Math.round(m.progress * 100) + '%', 0);
+        }
+      }
+    });
+    const text = result.data.text;
+    const price = extractPrice(text);
+    if (price) {
+      document.getElementById('costPrice').value = price;
+      showStatus('✓ 仕入価格 ¥' + price.toLocaleString() + ' を取得', 3000);
+      calculate();
+    } else {
+      showStatus('⚠ 価格を検出できませんでした。手動で入力してください', 4000);
+    }
+  } catch (e) {
+    showStatus('OCR失敗: ' + e.message, 4000);
+  }
+  event.target.value = '';
+}
+
+function extractPrice(text) {
+  // ¥1,980 / 1,980円 / 1980 のような形式を抽出
+  const patterns = [
+    /[¥￥]\s*([0-9,]+)/,
+    /([0-9,]+)\s*円/,
+    /([0-9]{3,6})/
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) {
+      const num = parseInt(m[1].replace(/,/g, ''));
+      if (num >= 50 && num <= 999999) return num;
+    }
+  }
+  return null;
+}
+
+function showStatus(msg, duration) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.display = 'block';
+  if (duration > 0) {
+    setTimeout(() => { el.style.display = 'none'; }, duration);
+  }
+}
+
+function resetAll() {
+  ['productName','janCode','costPrice','sellPrice'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('shipCost').value = '0';
+  document.getElementById('category').value = '15';
+  document.getElementById('fbaSize').value = '318';
+  setFba(false);
+  calculate();
+}
+</script>
+
+</body>
+</html>
